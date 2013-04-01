@@ -80,11 +80,11 @@ void runCPU(struct dispatchbuffer *disp, int cpu)
 		if(p(disp->workers[cpu].gosem, 0))
 			return;
 		struct request rq = disp->workers[cpu].rq;
-		v(disp->workers[cpu].rq.sem, 0);
 		printf("\t\tCPU %d receives request for %d seconds from %d\n",
 					 cpu, rq.ticks, rq.pid);
-		/* Let the user process finish */
 		sleep(rq.ticks);
+		/* Let the user process finish */
+		v(disp->workers[cpu].rq.sem, 0);
 		printf("\t\t\t\tCPU %d finished request for %d\n", cpu, rq.pid);
 	}
 }

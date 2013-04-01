@@ -43,8 +43,9 @@ int bbCreate(unsigned size, size_t elsize)
 void bbFree(int bbmem)
 {
 	struct boundedbuf *bb = shmat(bbmem, NULL, 0);
-	semctl(bb->semaphores, 0, IPC_RMID);	
+	semctl(bb->semaphores, 0, IPC_RMID);
 	shmdt(bb);
+	shmctl(bbmem, IPC_RMID, 0);
 }
 
 void *bbConsume(int bbmem)
