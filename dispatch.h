@@ -36,10 +36,8 @@ struct dispatchbuffer {
 	/* clock doesn't need to be synchronized,
 	 * as it will always be in a valid state */
 	int clock;
-	int rcsem;
-	int runcnt;
 	int cpucount;
-	struct boundedbuf *jobs, *cpus;
+	int jobbb, cpubb;
 	struct cpu workers[];
 };
 

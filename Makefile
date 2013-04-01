@@ -14,10 +14,9 @@ startup: startup.o libmystuff.so
 user: user.o libmystuff.so
 	$(CC) $(CFLAGS) -L. -lmystuff -o $@ $<
 
-libmystuff.so: libipc.c heap.c heap.h myipc.h
+libmystuff.so: libipc.c myipc.h
 	$(CC) $(CFLAGS) -c -Werror -fpic -o libipc.o libipc.c
-	$(CC) $(CFLAGS) -c -Werror -fpic -o libheap.o heap.c
-	$(CC) -shared -o libmystuff.so libipc.o libheap.o
+	$(CC) -shared -o libmystuff.so libipc.o
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<

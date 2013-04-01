@@ -35,45 +35,39 @@ int main(int argc, char **argv)
 	struct dispatchbuffer *disp = init(cpus);
 	/* Create the clock */
 	if(fork()) {
-		p(disp->rcsem, 0);
-		disp->runcnt++;
-		v(disp->rcsem, 0);
 		runClock(disp);
+		/* The clock is responsible for cleanup, as the others will probably be
+		 * waiting for a semaphore to be unlocked that never will.
+		 */
+		cleanup(disp);
 	}
 	/* Create the CPU */
 	else if(fork()) {
 		int id;
-		for(id = 0; id < cpus && fork(); id++);
-		p(disp->rcsem, 0);
-		disp->runcnt++;
-		v(disp->rcsem, 0);
+		for(id = 0; id < (cpus - 1) && fork(); id++);
 		runCPU(disp, id);
 	}
 	else {
-		printf("Let the Simulation Begin!!\n");
-		p(disp->rcsem, 0);
-		disp->runcnt++;
-		v(disp->rcsem, 0);
+		/* Create the dispatcher */
 		dispatch(disp);
 	}
-	p(disp->rcsem, 0);
-	disp->runcnt--;
-	if(disp->runcnt == 0)
-		cleanup(disp);
-	else
-		v(disp->rcsem, 0);
 	return 0;
 }
 
 void dispatch(struct dispatchbuffer *disp)
 {
+	printf("Let the Simulation Begin!!\n");
 	/* Get the jobs from the bounded buffer for jobs,
 	 * Get a CPU from the bounded buffer for cpus,
 	 * Set that CPU to execute that job
 	 */
 	while(!disp->done) {
-		struct request *rq = (struct request *)bbConsume(disp->jobs);
-		int *cpu = (int *)bbConsume(disp->cpus);
+		int *cpu = (int *)bbConsume(disp->cpubb);
+		if(!cpu)
+			return;
+		struct request *rq = (struct request *)bbConsume(disp->jobbb);
+		if(!rq)
+			return;
 		disp->workers[*cpu].rq = *rq;
 		v(disp->workers[*cpu].gosem, 0);
 	}
@@ -82,18 +76,22 @@ void dispatch(struct dispatchbuffer *disp)
 void runCPU(struct dispatchbuffer *disp, int cpu)
 {
 	while(!disp->done) {
-		bbProduce(disp->cpus, &cpu);
-		p(disp->workers[cpu].gosem, 0);
-		printf("\t\tCPU receives request for %d seconds from %d\n",
-					 disp->workers[cpu].rq.ticks, disp->workers[cpu].rq.pid);
-		sleep(disp->workers[cpu].rq.ticks);
-		v(disp->workers[cpu].rq.sem);
+		bbProduce(disp->cpubb, &cpu);
+		if(p(disp->workers[cpu].gosem, 0))
+			return;
+		struct request rq = disp->workers[cpu].rq;
+		v(disp->workers[cpu].rq.sem, 0);
+		printf("\t\tCPU %d receives request for %d seconds from %d\n",
+					 cpu, rq.ticks, rq.pid);
+		/* Let the user process finish */
+		sleep(rq.ticks);
+		printf("\t\t\t\tCPU %d finished request for %d\n", cpu, rq.pid);
 	}
 }
 
 void runClock(struct dispatchbuffer *disp)
 {
-	while(disp->done) {
+	while(!disp->done) {
 		sleep(1);
 		disp->clock++;
 		printf("%d\n", disp->clock);
@@ -112,22 +110,22 @@ struct dispatchbuffer *init(int cpus)
 	buffer->shmid = shmid;
 	buffer->clock = 0;
 	buffer->done = false;
-	buffer->jobs = bbCreate(DEFBUFSIZE, sizeof(struct request));
-	buffer->cpus = bbCreate(cpus, sizeof(int));
-	buffer->runcnt = 0;
+	buffer->jobbb = bbCreate(DEFBUFSIZE, sizeof(struct request));
+	buffer->cpubb = bbCreate(cpus, sizeof(int));
 	buffer->cpucount = cpus;
-	buffer->rcsem = getsem(1, 1);
-	for(int i = 0; i < cpus; i++)
-		buffer->workers[i].gosem = getsem(1, 1);
+	for(int i = 0; i < cpus; i++) {
+		buffer->workers[i].gosem = getsem(1, 0);
+	}
 	return buffer;
 }
 
 void cleanup(struct dispatchbuffer *disp)
 {
 	unlink(shmfname);
-	semctl(disp->rcsem, 0, IPC_RMID);
 	for(int i = 0; i < disp->cpucount; i++)
 		semctl(disp->workers[i].gosem, 0, IPC_RMID);
+	bbFree(disp->jobbb);
+	bbFree(disp->cpubb);
 	shmctl(disp->shmid, IPC_RMID, NULL);
 	shmdt(disp);
 }

@@ -7,6 +7,7 @@ extern "C" {
 #endif
 
 #include <stddef.h>
+#include <stdbool.h>
 
 /* Initializes a shared memory segment of size size
  * If shmid is not NULL, it will end with the shared memory id
@@ -19,17 +20,17 @@ void *getshm(int size, int *shmid);
  */
 int getsem(int count, int initial);
 /* Locks the critical section */
-void p(int semaphore, int num);
+bool p(int semaphore, int num);
 /* Unlocks the critical section */
 void v(int semaphore, int num);
 
 /* A solution to the bounded buffer problem */
 struct boundedbuf;
 
-struct boundedbuf *bbCreate(unsigned bbsize, size_t elsize);
-void bbFree(struct boundedbuf *);
-void *bbConsume(struct boundedbuf *);
-void bbProduce(struct boundedbuf *, void *consumable);
+int bbCreate(unsigned bbsize, size_t elsize);
+void bbFree(int bbmem);
+void *bbConsume(int bbmem);
+void bbProduce(int bbmem, void *consumable);
 
 
 #ifdef __cplusplus
