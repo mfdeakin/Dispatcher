@@ -6,14 +6,18 @@ OLDSYMNAME=_binary_usage_txt_start
 NEWSYMNAME=semusage
 OBJCOPYFLAGS=-I binary -O elf64-x86-64 -B i386 --redefine-sym $(OLDSYMNAME)=$(NEWSYMNAME)
 
-all: startup
+all: startup user
 
-startup: startup.o libipc.so
-	$(CC) $(CFLAGS) -L. -lipc -o $@ $<
+startup: startup.o libmystuff.so
+	$(CC) $(CFLAGS) -L. -lmystuff -o $@ $<
 
-libipc.so: libipc.c myipc.h
+user: user.o libmystuff.so
+	$(CC) $(CFLAGS) -L. -lmystuff -o $@ $<
+
+libmystuff.so: libipc.c heap.c heap.h myipc.h
 	$(CC) $(CFLAGS) -c -Werror -fpic -o libipc.o libipc.c
-	$(CC) -shared -o libipc.so libipc.o
+	$(CC) $(CFLAGS) -c -Werror -fpic -o libheap.o heap.c
+	$(CC) -shared -o libmystuff.so libipc.o libheap.o
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
