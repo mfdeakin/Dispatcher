@@ -22,18 +22,25 @@ const char *shmfname = "dispatch.inf";
 struct request {
 	int pid;
 	int ticks;
+	int sem;
+};
+
+struct cpu {
+	int gosem;
+	struct request rq;
 };
 
 struct dispatchbuffer {
 	bool done;
+	int shmid;
+	/* clock doesn't need to be synchronized,
+	 * as it will always be in a valid state */
 	int clock;
-	struct request requests[MAXREQUESTS];
-	int rqsem;
-	int rqemptysem;
-	int rqfullsem;
-	int cpuhasrqsem;
-	int cpureadysem;
-	int cpunextrq[];
+	int rcsem;
+	int runcnt;
+	int cpucount;
+	struct boundedbuf *jobs, *cpus;
+	struct cpu workers[];
 };
 
 #endif
