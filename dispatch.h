@@ -1,3 +1,12 @@
+/* Dispatcher
+ * By Michael Deakin
+ * /home/deakin_mf/csc460/hw/Dispatcher
+ * This uses a shared library. Run as follows:
+ * LD_LIBRARY_PATH="." ./startup [timeslice (sec)] [number of cpus]
+ * and
+ * LD_LIBRARY_PATH="." ./user [number of jobs]
+ */
+
 
 #ifndef _INCLUDE_H_
 #define _INCLUDE_H_
@@ -22,11 +31,12 @@ const char *shmfname = "dispatch.inf";
 struct request {
 	int pid;
 	int ticks;
-	int sem;
+	int sem, sindex;
 };
 
 struct cpu {
 	int gosem;
+	bool hadjob;
 	struct request rq;
 };
 
@@ -34,8 +44,11 @@ struct dispatchbuffer {
 	bool done;
 	int shmid;
 	/* clock doesn't need to be synchronized,
-	 * as it will always be in a valid state */
+	 * as it will always be in a valid state,
+	 * and there is only one writer, so no lost updates
+	 */
 	int clock;
+	int timeslice;
 	int cpucount;
 	int jobbb, cpubb;
 	struct cpu workers[];

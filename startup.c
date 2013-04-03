@@ -8,7 +8,7 @@ const int DEFTIMESLICE = 1;
 const int DEFCPUS = 1;
 const int DEFBUFSIZE = 5;
 
-struct dispatchbuffer *init(int cpus);
+struct dispatchbuffer *init(int cpus, int timeslice);
 void cleanup(struct dispatchbuffer *disp);
 void runClock(struct dispatchbuffer *disp);
 void runCPU(struct dispatchbuffer *disp, int cpu);
@@ -32,7 +32,7 @@ int main(int argc, char **argv)
 			}
 		}
 	}
-	struct dispatchbuffer *disp = init(cpus);
+	struct dispatchbuffer *disp = init(cpus, timeslice);
 	/* Create the clock */
 	if(fork()) {
 		runClock(disp);
@@ -62,19 +62,42 @@ void dispatch(struct dispatchbuffer *disp)
 	 * Set that CPU to execute that job
 	 */
 	while(!disp->done) {
-		int *cpu = (int *)bbConsume(disp->cpubb);
-		if(!cpu)
+		int *cpuid = (int *)bbConsume(disp->cpubb);
+		if(!cpuid)
 			return;
+		/* We need to make certain the job the cpu was running is actually done
+		 * If not, add it back to the buffer, otherwise wake the user process
+		 */
+		if(disp->workers[*cpuid].hadjob) {
+			struct request rq = disp->workers[*cpuid].rq;
+			rq.ticks--;
+			if(rq.ticks > 0) {
+				/* fork off another process to add the request so we don't deadlock */
+				if(fork() == 0) {
+					bbProduce(disp->jobbb, &rq);
+					exit(0);
+				}
+			}
+			else {
+				/* Let the user know their job is done */
+				v(rq.sem, rq.sindex);
+			}
+		}
 		struct request *rq = (struct request *)bbConsume(disp->jobbb);
 		if(!rq)
 			return;
-		disp->workers[*cpu].rq = *rq;
-		v(disp->workers[*cpu].gosem, 0);
+		disp->workers[*cpuid].rq = *rq;
+		v(disp->workers[*cpuid].gosem, 0);
 	}
 }
 
 void runCPU(struct dispatchbuffer *disp, int cpu)
 {
+	/* Let the scheduler know the CPU is spinning it's wheels
+	 * Wait for the scheduler to tell it that there is a job for it
+	 * "Run" that job for 1 timeslice
+	 * Repeat
+	 */
 	while(!disp->done) {
 		bbProduce(disp->cpubb, &cpu);
 		if(p(disp->workers[cpu].gosem, 0))
@@ -82,10 +105,9 @@ void runCPU(struct dispatchbuffer *disp, int cpu)
 		struct request rq = disp->workers[cpu].rq;
 		printf("\t\tCPU %d receives request for %d seconds from %d\n",
 					 cpu, rq.ticks, rq.pid);
-		sleep(rq.ticks);
-		/* Let the user process finish */
-		v(disp->workers[cpu].rq.sem, 0);
-		printf("\t\t\t\tCPU %d finished request for %d\n", cpu, rq.pid);
+		sleep(disp->timeslice);
+		disp->workers[cpu].hadjob = true;
+		printf("\t\tCPU %d finished request for %d\n", cpu, rq.pid);
 	}
 }
 
@@ -98,7 +120,7 @@ void runClock(struct dispatchbuffer *disp)
 	}
 }
 
-struct dispatchbuffer *init(int cpus)
+struct dispatchbuffer *init(int cpus, int timeslice)
 {
 	int shmid;
 	struct dispatchbuffer *buffer =
@@ -109,12 +131,14 @@ struct dispatchbuffer *init(int cpus)
 	fclose(shmfile);
 	buffer->shmid = shmid;
 	buffer->clock = 0;
+	buffer->timeslice = timeslice;
 	buffer->done = false;
 	buffer->jobbb = bbCreate(DEFBUFSIZE, sizeof(struct request));
 	buffer->cpubb = bbCreate(cpus, sizeof(int));
 	buffer->cpucount = cpus;
 	for(int i = 0; i < cpus; i++) {
 		buffer->workers[i].gosem = getsem(1, 0);
+		buffer->workers[i].hadjob = false;
 	}
 	return buffer;
 }

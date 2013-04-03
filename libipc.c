@@ -82,6 +82,7 @@ void bbProduce(int bbmem, void *consumable)
 	}
 	/* Add the item to the bounded buffer after locking it */
 	if(p(bb->semaphores, 0)) {
+		/* Failed to lock, exit */
 		v(bb->semaphores, 1);
 		return;
 	}

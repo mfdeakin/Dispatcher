@@ -8,6 +8,7 @@
 #include <sys/sem.h>
 
 void *getdispatcher(void);
+void simulate(struct dispatchbuffer *disp, int jobs);
 
 int main(int argc, char **argv)
 {
@@ -28,21 +29,39 @@ int main(int argc, char **argv)
 		disp->done = true;
 	}
 	else {
-		srand(time(NULL));
-		struct request *rq = malloc(sizeof(struct request[n]));
-		for(int i = 0; i < n; i++) {
-			rq[i].pid = getpid();
-			rq[i].ticks = (rand() % 8) + 2;
-			rq[i].sem = getsem(1, 0);
-			printf("Adding job with %d time to the bounded buffer %d\n",
-						 rq[i].ticks, disp->jobbb);
-			bbProduce(disp->jobbb, &rq[i]);
-		}
-		for(int i = 0; i < n; i++) {
-			p(rq[i].sem, 0);
-			semctl(rq[i].sem, 0, IPC_RMID);
-		}
+		simulate(disp, n);
 	}
+}
+
+void simulate(struct dispatchbuffer *disp, int jobs)
+{
+	srand(time(NULL));
+	struct request *rq = malloc(sizeof(struct request[jobs]));
+	int sem = getsem(jobs, 0);
+	int totrt = 0;
+	for(int i = 0; i < jobs; i++) {
+		rq[i].pid = getpid();
+		rq[i].ticks = (rand() % 5) + 1;
+		rq[i].sem = sem;
+		rq[i].sindex = i;
+		int thinktime = (rand() % 9) + 2;
+		printf("\t%d is thinking for %d seconds\n",
+					 rq[i].pid, thinktime);
+		sleep(thinktime);
+		int starttime = disp->clock;
+		printf("\t%d requests %d\n", rq[i].pid, rq[i].ticks);
+		bbProduce(disp->jobbb, &rq[i]);
+		p(rq[i].sem, i);
+		int rtime = disp->clock - starttime;
+		printf("\t%d %d finished in %d seconds\n",
+					 rq[i].pid, i, rtime);
+		totrt += rtime;
+	}
+	printf("\t%d is logging off with average response time=%f s\n",
+				 rq[0].pid, ((float)totrt) / jobs);
+	free(rq);
+	shmdt(disp);
+	semctl(sem, 0, IPC_RMID);
 }
 
 void *getdispatcher(void)
